@@ -19,11 +19,11 @@ cd $DIR
 
 echo "Downloading Amazon Electronics reviews data..."
 # http://jmcauley.ucsd.edu/data/amazon/
-wget http://snap.stanford.edu/data/amazon/productGraph/categoryFiles/reviews_Electronics_5.json.gz
+wget -c http://snap.stanford.edu/data/amazon/productGraph/categoryFiles/reviews_Electronics_5.json.gz
 
 echo "Downloading mosesdecoder..."
 #https://github.com/moses-smt/mosesdecoder
-wget https://github.com/moses-smt/mosesdecoder/archive/master.zip
+wget -c https://github.com/moses-smt/mosesdecoder/archive/master.zip
 
 unzip master.zip
 rm master.zip
