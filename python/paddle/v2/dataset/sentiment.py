@@ -20,7 +20,6 @@ The script fetch and preprocess movie_reviews data set
 that provided by NLTK
 """
 
-
 import nltk
 import numpy as np
 from nltk.corpus import movie_reviews
@@ -80,9 +79,9 @@ def load_sentiment_data():
     label_dict = get_label_dict()
     download_data_if_not_yet()
     words_freq = nltk.FreqDist(w.lower() for w in movie_reviews.words())
-    data_set = [([words_freq[word.lower()]
-                  for word in movie_reviews.words(fileid)],
-                 label_dict[category])
+    data_set = [(
+        [words_freq[word.lower()]
+         for word in movie_reviews.words(fileid)], label_dict[category])
                 for category in movie_reviews.categories()
                 for fileid in movie_reviews.fileids(category)]
     return data_set
