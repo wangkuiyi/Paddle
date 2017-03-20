@@ -60,11 +60,11 @@ Here we describe how to use above two images.  We start from considering our dai
 
 Developers work on a computer, which is usually a laptop or desktop:
 
-<img src="doc/paddle-development-environment.png" width=500 />
+<img src="doc/paddle-development-environment.png" width=600 />
 
 or, they might rely on a more sophisticated box (like with GPUs):
 
-<img src="doc/paddle-development-environment-gpu.png" width=500 />
+<img src="doc/paddle-development-environment-gpu.png" width=600 />
 
 A principle here is that source code lies on the development computer (host) so that editors like Eclipse can parse the source code to support auto-completion.
 
@@ -138,7 +138,7 @@ The book image is an example of PaddlePaddle application image.  We can build it
 ```bash
 git clone https://github.com/paddlepaddle/book
 cd book
-docker build -t book .
+.tools/build_docker.sh
 ```
 
 ### Build and Run Distributed Applications
