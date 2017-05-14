@@ -1,8 +1,7 @@
+#include "majel/malloc/cpu/system_allocator.h"
+#include "majel/gpu/detail/cuda.h"
 
-#include <majel/gpu/detail/cuda.h>
-#include <majel/malloc/cpu/system_allocator.h>
-
-#include <majel/contrib/support/knobs.h>
+#include "majel/contrib/support/knobs.h"
 
 namespace majel {
 namespace malloc {
@@ -86,6 +85,7 @@ void SystemAllocator::shutdown() {
 }
 
 bool SystemAllocator::uses_gpu() { return false; }
-}
-}
-}
+
+}  // namespace cpu
+}  // namespace malloc
+}  // namespace majel

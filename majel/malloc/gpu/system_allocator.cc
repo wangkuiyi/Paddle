@@ -1,10 +1,9 @@
+#include "majel/malloc/gpu/system_allocator.h"
+#include "majel/malloc/detail/parameters.h"
 
-#include <majel/malloc/detail/parameters.h>
-#include <majel/malloc/gpu/system_allocator.h>
+#include "majel/gpu/detail/cuda.h"
 
-#include <majel/gpu/detail/cuda.h>
-
-#include <majel/contrib/logger/logger.h>
+#include "majel/contrib/logger/logger.h"
 
 #include <vector>
 
@@ -166,6 +165,7 @@ void SystemAllocator::shutdown() {
 }
 
 bool SystemAllocator::uses_gpu() { return true; }
-}
-}
-}
+
+}  // namespace gpu
+}  // namespace malloc
+}  // namespace majel

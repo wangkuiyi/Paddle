@@ -1,4 +1,3 @@
-
 #pragma once
 
 // Standard Library Includes
@@ -23,6 +22,7 @@ public:
 public:
   static bool uses_gpu();
 };
-}
-}
-}
+
+}  // namespace gpu
+}  // namespace malloc
+}  // namespace majel
