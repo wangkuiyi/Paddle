@@ -14,29 +14,48 @@ struct Expr {
   Type& Value(void) { return *static_cast<Type*>(this); }
 };
 
-template <typename Type, typename ElemType>
-struct ElementWiseExpr : public Expr<Type> {
-  virtual size_t Size() const = 0;
-  virtual const ElemType Elem(size_t index) const = 0;
-  virtual ~ElementWiseExpr() {}
-};
-
 template <typename ElemType>
-class Tensor : public ElementWiseExpr<Tensor<ElemType>, ElemType> {
+class Tensor : public Expr<Tensor<ElemType>> {
 public:
-  Tensor(ElemType* data, int size) : size_(size), data_(data) {}
+  Tensor(size_t size) : size_(size), data_(new ElemType[size]), own_(true) {}
+  Tensor(ElemType* data, int size) : size_(size), data_(data), own_(false) {}
 
-  virtual const ElemType Elem(size_t i) const {
+  ~Tensor() {
+    if (own_) {
+      delete[] data_;
+      own_ = false;
+      size_ = 0;
+    }
+  }
+
+  const ElemType Elem(size_t i) const {
     assert(i < size_);
     return data_[i];
   }
 
-  virtual size_t Size() const { return size_; }
+  size_t Size() const { return size_; }
+
+  template <typename LHSElemType, typename RHSExpr>
+  struct Assign;
+
+  template <typename RHSExpr>
+  Assign<ElemType, RHSExpr> operator=(const RHSExpr& src) const {
+    return Assign<ElemType, RHSExpr>(*this, src);
+  }
 
 private:
   size_t size_;
   ElemType* data_;
+  bool own_;
 };
+
+template <typename LHSElemType, typename RHSExpr>
+struct Assign : Expr<Assign<Tensor<LHSElemType>, RHSExpr>> {
+  Assign(Tensor<LHSElemType>& dst, const RHSExpr& src) : dst_(dst), src_(src) {}
+  Tensor<LHSElemType>& dst_;
+  const RHSExpr& src_;
+};
+
 /*
 
 template <ExprType>
