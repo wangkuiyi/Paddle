@@ -65,7 +65,7 @@ Some Python API proposals:
 ```python
 x = paddle.variable.new("x") # create a variable of not yet known type
 x = paddle.variable.tensor("x") # create a tensor typed varible without value
-x = paddle.variable.int("x", 10) # create an unnamed int varaible and set to 10
+x = paddle.variable.int("x", 10) # create an int varaible and set to 10
 x = paddle.variable.operation("x", paddle.operator.gemm(...)) # an operation
 x = paddle.variable.tensor("x", 
       numpy.random.randn(200, 100), # set the value of the tensor
@@ -123,9 +123,19 @@ class Scope {
 };
 ```
 
-## Execution and Context
+## Network, Execution and Context
 
-A neural network is a program.  Training or inference is to execute it.  The runtime environment of execution is known as a *context*:
+A neural network is represented by `class Net`
+
+```cpp
+class Net {
+ public:
+  AddOp
+
+A neural network is a program.
+
+
+Training or inference is to execute it.  The runtime environment of execution is known as a *context*:
 
 1. a scope,
 1. device(s), or places,
@@ -134,14 +144,15 @@ A neural network is a program.  Training or inference is to execute it.  The run
 and can be defined as
 
 ```cpp
+template <typename Place /* GPUPlace or CPUPlace */ >
 struct Context {
   Scope* scope_;
-  std::vector<Place> places_; // a network might run on multiple devices.
+  Place place_;
   bool training_;
 };
 ```
 
-The Python API `paddle.train` can prepare a context before it calls C++ code `Operator::Run(const Context&)`.
+`Net::Run` can  calls C++ code `Operator::Run(const Context&)`.
 
 As an example, `paddle::operator::Recurrent::Run(const Context& ctx)` can then create a new scope by calling `ctx.CreateScope`, and run the step-net with a new context around the new scope:
 
@@ -164,7 +175,7 @@ class Gemm {
  public:
   void Run(const Context& ctx) {
     if (paddle::platform::IsGPUPlace(ctx.places_[0])) {
-      cuDNNGemm(
+      cublasGemm(
          Output(0).mutable_data<float>(ctx.places_[0], DerivedSizeFromInputs()),
          ...);
     } else {

@@ -29,7 +29,7 @@ RUN apt-get update && \
     curl sed grep graphviz libjpeg-dev zlib1g-dev  \
     python-numpy python-matplotlib gcc g++ \
     automake locales clang-format-3.8 swig doxygen cmake  \
-    liblapack-dev liblapacke-dev libboost-dev \
+    liblapack-dev liblapacke-dev libboost-dev libboost-python-dev \
     clang-3.8 llvm-3.8 libclang-3.8-dev \
     net-tools && \
     apt-get clean -y

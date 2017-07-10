@@ -26,3 +26,5 @@ if(WITH_SWIG_PY)
           ${CMAKE_CURRENT_SOURCE_DIR}/setup.py)
   add_subdirectory(api)
 endif()
+
+add_subdirectory(binding)
