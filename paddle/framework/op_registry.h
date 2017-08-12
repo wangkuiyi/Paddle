@@ -173,11 +173,11 @@ Add a mark to which output is temporary is helpful for future optimization.
 };
 
 class OpRegistry {
+ public:
   using OpCreator = std::function<OperatorBase*()>;
   using VarIndexMap = std::unordered_map<std::string, int>;
   using VarNameList = std::vector<std::string>;
 
- public:
   template <typename OpType, typename ProtoMakerType>
   static void RegisterOp(const std::string& op_type) {
     op_creators()[op_type] = [] { return new OpType; };

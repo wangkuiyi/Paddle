@@ -90,8 +90,7 @@ OperatorBase* BuildGradOp(const OperatorBase* op) {
 
   std::vector<std::string> grad_inputs, grad_outputs;
 
-  using VarIndexMap = std::unordered_map<std::string, int>;
-  VarIndexMap* grad_idxs = new VarIndexMap;
+  OpRegistry::VarIndexMap* grad_idxs = new OpRegistry::VarIndexMap;
   int in_idx = 0;
   int out_idx = 0;
   TransOpArg(op, grad_inputs, grad_outputs, grad_attrs, *grad_idxs,
