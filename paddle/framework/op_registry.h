@@ -1,16 +1,16 @@
 /* Copyright (c) 2016 PaddlePaddle Authors. All Rights Reserve.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+   http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License. */
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
 
 #pragma once
 
@@ -23,6 +23,7 @@ limitations under the License. */
 #include "paddle/framework/grad_op_builder.h"
 #include "paddle/framework/op_desc.pb.h"
 #include "paddle/framework/scope.h"
+#include "paddle/string/printf.h"
 
 namespace paddle {
 namespace framework {
@@ -174,13 +175,23 @@ Add a mark to which output is temporary is helpful for future optimization.
 
 class OpRegistry {
  public:
-  using OpCreator = std::function<OperatorBase*()>;
+  using OpCreator = std::function<OperatorBase*(
+      const std::string& type, const std::vector<std::string>& inputs,
+      const std::vector<std::string>& outputs, const AttributeMap& attrs,
+      std::unordered_map<std::string, int>* in_out_idxs)>;
+  // TODO(yi): Consider rename Var by Param/Parameter
   using VarIndexMap = std::unordered_map<std::string, int>;
   using VarNameList = std::vector<std::string>;
 
   template <typename OpType, typename ProtoMakerType>
   static void RegisterOp(const std::string& op_type) {
-    op_creators()[op_type] = [] { return new OpType; };
+    op_creators()[op_type] = [](
+        const std::string& type, const std::vector<std::string>& inputs,
+        const std::vector<std::string>& outputs, const AttributeMap& attrs,
+        std::unordered_map<std::string, int>* in_out_idxs) {
+      return new OpType(type, inputs, outputs, attrs, in_out_idxs);
+    };
+
     OpAttrChecker& op_checker = op_checkers()[op_type];
     OpProto& op_proto = protos()[op_type];
     auto maker = ProtoMakerType(&op_proto, &op_checker);
@@ -191,6 +202,7 @@ class OpRegistry {
         "Fail to initialize %s's OpProto, because %s is not initialized",
         op_type, op_proto.InitializationErrorString());
 
+    // TODO(yi): Check if we really need new here.
     VarIndexMaps()[op_type].reset(new VarIndexMap());
     auto& varmap = *VarIndexMaps()[op_type];
     int idx = 0;
@@ -206,37 +218,37 @@ class OpRegistry {
   template <typename GradOpType>
   static void RegisterGradOp(const std::string& op_type,
                              const std::string& grad_op_type) {
-    op_creators()[grad_op_type] = [] { return new GradOpType; };
+    op_creators()[grad_op_type] = [](
+        const std::string& type, const std::vector<std::string>& inputs,
+        const std::vector<std::string>& outputs, const AttributeMap& attrs,
+        std::unordered_map<std::string, int>* in_out_idxs) {
+      return new GradOpType(type, inputs, outputs, attrs, in_out_idxs);
+    };
     grad_ops()[op_type] = grad_op_type;
   }
 
   static std::shared_ptr<OperatorBase> CreateOp(const std::string& type,
                                                 const VarNameList& inputs,
-                                                const VarNameList& outputs,
-                                                const AttributeMap& attrs) {
+                                                VarNameList* outputs,
+                                                AttributeMap* attrs) {
+    op_checkers().at(type).Check(*attrs);
+    GenerateTempVariableName(outputs);
+
+    auto var_index_it = VarIndexMaps().find(type);
+    // TODO(yi): Is it enough that we just copy
+    // OperatorBase::in_out_idxs_ from VaIndexMaps()?  I'd thought
+    // that we need to modify OperatorBase::in_out_idxs_ to adapt to
+    // the real opeator inputs in an network configuration.
+    std::unordered_map<std::string, int>* in_out_idxs =
+        (var_index_it != VarIndexMaps().end()) ? var_index_it->second : nullptr;
+
     auto op_create_it = op_creators().find(type);
     PADDLE_ENFORCE(op_create_it != op_creators().end(),
                    "Operator %s cannot be found.", type);
 
-    auto op = op_create_it->second();
-    op->type_ = type;
-    op->inputs_ = inputs;
-    op->outputs_ = outputs;
-
-    op->attrs_ = attrs;
-    op_checkers().at(type).Check(op->attrs_);
-
-    GenerateTempVariableName(op);
-
-    {
-      auto var_index_it = VarIndexMaps().find(type);
-      if (var_index_it != VarIndexMaps().end()) {
-        op->in_out_idxs_ = var_index_it->second;
-      }
-    }
-
-    op->Init();
-    return std::shared_ptr<OperatorBase>(op);
+    // TODO(yi): Do we need shared_ptr here?
+    return std::shared_ptr<OperatorBase>(
+        op_create_it->second(type, inputs, *outputs, *attrs, in_out_idxs));
   }
 
   static std::shared_ptr<OperatorBase> CreateOp(const OpDesc& op_desc) {
@@ -282,6 +294,7 @@ class OpRegistry {
     return maps_;
   }
 
+  // TODO(yi): Function names should be Camel-case.
   static std::unordered_map<std::string, OpCreator>& op_creators() {
     static std::unordered_map<std::string, OpCreator> op_creators_;
     return op_creators_;
@@ -293,13 +306,11 @@ class OpRegistry {
     return op_checkers_;
   }
 
-  static void GenerateTempVariableName(OperatorBase* op) {
+  static void GenerateTempVariableName(VarNameList* outputs) {
     static std::atomic<size_t> gUniqId(0UL);
-    for (auto& outname : op->outputs_) {
+    for (auto& outname : *outputs) {
       if (outname == kTempVarName) {
-        outname += op->type_;
-        outname += "@";
-        outname += std::to_string(gUniqId.fetch_add(1));
+        outname += string.Printf("%s@%d", op->type_, gUniqId.fetch_add(1));
       }
     }
   }
