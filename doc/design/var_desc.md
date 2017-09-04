@@ -1,14 +1,14 @@
 ## Background
-PaddlePaddle divides the description of neural network computation graph into two stages: compile time and runtime.
 
-The data structure to describe the compile time graph should be able to be serialized for distributed training. So we use proto message to describe the graph: OpDesc to describe computation and VarDesc to describe data.
+PaddlePaddle distinguishes the description of a neural networks as *compiling* and the execution as *running*.  At *compile time*, users' Python program executes to build the computation graph.  At *runtime*, PaddlePaddle runs the built computation graph.
 
-PaddlePaddle will generate these data structure according to user's description and do some optimization, such as:
+We'd need to serialize/deserialize compile results for distributed training and enterprise deployment, so we use protobuf message to describe the graph -- `OpDesc` for operators and `VarDesc` for variables.
 
-1. InferShape. Infer the Output size according to Input size and set them into VarDesc.
-1. memory optimise and reuse. Scan all the memory that will be used and reuse some memory that is allocated before but will not be used anymore to reduce memory.
+These protobuf messages allow the inference of the size of operators' outputs according to input sizes.  Such size information is saved in `VarDesc`.
 
-VarDesc is used to describe different kinds of Variable value, such as Tensor, scalar, and scope:
+`VarDesc` and `OpDesc` together describes computation graphs, basing on which, we can reuse variables as much as we could.
+
+PaddlePaddle variables, like a C++/Java variables, have the type property.   The type could be Tensor, scalar values, and Scope.
 
 ## Definition of VarDesc in Proto
 
