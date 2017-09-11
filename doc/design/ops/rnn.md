@@ -44,8 +44,7 @@ $$,
 
 where $h_t$ and $h_{t-1}$ are the memory and ex-memory of step $t$'s respectively.
 
-In the implementation, we can make an ex-memory variable either "refers to" the memory variable of the previous step,
-or copy the value of the previous memory value to the current ex-memory variable.
+We can use `Tenor::ShareDataWith` to make an ex-memory variable shares the the value of the previous memory variable, so to save the copy of tensor values across step-scopes.
 
 ### Usage in Python
 
