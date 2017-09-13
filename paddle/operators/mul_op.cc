@@ -14,10 +14,10 @@
 
 #include "paddle/operators/mul_op.h"
 
+#include "paddle/framework/lod_tensor.h"
+
 namespace paddle {
 namespace operators {
-
-using framework::Tensor;
 
 class MulOp : public framework::OperatorWithKernel {
  public:
@@ -47,7 +47,7 @@ class MulOp : public framework::OperatorWithKernel {
         "First matrix's width must be equal with second matrix's height.");
     // Each operator's InferShape must call Output<LoDTensor> to create
     // LoDTensor in variable.
-    ctx.Output<LoDTensor>("Out")->tensor()->Resize(
+    ctx.Output<framework::LoDTensor>("Out")->tensor()->Resize(
         {x_mat_dims[0], y_mat_dims[1]});
     // Only the forward operator needs to pass the lod.
     // pass the lod of Input(X) to output.
@@ -64,9 +64,9 @@ class MulOpMaker : public framework::OpProtoAndCheckerMaker {
     AddOutput("Out", "The output of mul op");
     AddAttr<int>(
         "x_num_col_dims",
-        R"DOC(mul_op can take tensors with more than two dimensions as input `X`, 
-            in that case, tensors will be reshaped to a matrix. The matrix's first 
-            dimension(column length) will be the product of tensor's last 
+        R"DOC(mul_op can take tensors with more than two dimensions as input `X`,
+            in that case, tensors will be reshaped to a matrix. The matrix's first
+            dimension(column length) will be the product of tensor's last
             `num_col_dims` dimensions, and the matrix's second dimension(row length)
             will be the product of tensor's first `rank - num_col_dims` dimensions.
         )DOC")

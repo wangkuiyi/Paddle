@@ -23,7 +23,7 @@ limitations under the License. */
 #include "paddle/framework/attribute.h"
 #include "paddle/framework/framework.pb.h"
 #include "paddle/framework/scope.h"
-#include "paddle/framework/tensor.h"
+#include "paddle/framework/lod_tensor.h"
 #include "paddle/platform/device_context.h"
 #include "paddle/platform/place.h"
 #include "paddle/platform/variant.h"
@@ -289,26 +289,13 @@ class InferShapeContext {
   }
 
   template <typename T>
-  virtual const T* Input(const std::string& name) const {
+  const T* Input(const std::string& name) const {
     auto* var = InputVar(name);
     return var == nullptr ? nullptr : &var->Get<T>();
   }
 
-  // template <>
-  // virtual const Tensor* Input<Tensor>(const std::string& name) const {
-  //   auto* var = InputVar(name);
-  //   if (var == nullptr) return nullptr;
-  //   if (var->IsType<LoDTensor>()>) {
-  //     return &var->Get<LoDTensor>()->tensor();
-  //   } else {
-  //     PADDLE_ENFORCE(var->IsType<Tensor>()>);
-  //     return &var->Get<Tensor>();
-  //   }
-  //   return;
-  // }
-
   template <typename T>
-  virtual T* Output(const std::string& name) const {
+  T* Output(const std::string& name) const {
     auto var = OutputVar(name);
     return var == nullptr ? nullptr : var->GetMutable<T>();
   }
@@ -327,7 +314,7 @@ class InferShapeContext {
   }
 
   template <typename T>
-  virtual std::vector<T*> MultiOutput(const std::string& name) const {
+  std::vector<T*> MultiOutput(const std::string& name) const {
     auto names = op_.Outputs(name);
     std::vector<T*> res;
     res.reserve(names.size());
@@ -385,14 +372,12 @@ class ExecutionContext : public InferShapeContext {
   }
 
   template <typename T>
-  T* Output(const std::string& name) const override {
-    auto var = OutputVar(name);
-    // Different from InferShapeContext, call Get instread of GetMutable.
-    return var == nullptr ? nullptr : var->Get<T>();
+  T* Output(const std::string& name) const {
+    return OutputVar(name)->GetMutable<T>();
   }
 
   template <typename T>
-  std::vector<T*> MultiOutput(const std::string& name) const override {
+  std::vector<T*> MultiOutput(const std::string& name) const {
     auto names = op_.Outputs(name);
     std::vector<T*> res;
     res.reserve(names.size());
