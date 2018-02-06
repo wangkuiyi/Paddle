@@ -82,30 +82,31 @@ TEST(Channel, ConcurrentSendNonConcurrentReceiveWithSufficientBufferSize) {
   delete ch;
 }
 
-void ReceiveEmptyChannelTest(Channel* ch) {
-  size_t current = 5;
+void ReceiveFromEmptyChannelShouldBlockAndCloseUnblocksIt(Channel *ch) {
+  bool received = false;
   std::thread t([&]() {
-    // Read from channel
     int out;
-    ch->Receive(&out); // should block since channel is empty
-    current = 10;
+    ch->Receive(&out);  // should block since channel is empty
+    received = true;
   });
   std::this_thread::sleep_for(std::chrono::milliseconds(100));  // wait 0.1 sec
-  EXPECT_EQ(current, 5U); // the receiver should be blocked since channel is empty
+  EXPECT_EQ(received,
+            false);  // the receiver should be blocked since channel is empty
 
   CloseChannel(ch);
   t.join();
-  EXPECT_EQ(current, 10U); // when we close the channel, the receiver should unblock
+  EXPECT_EQ(received,
+            true);  // when we close the channel, the receiver should unblock
   delete ch;
 }
 
-TEST(Channel, BufferedReceiveEmptyChannelTest) {
-  auto ch = MakeChannel<size_t>(3);
-  ReceiveEmptyChannelTest(ch);
+TEST(Channel, ReceiveFromEmptyBufferedChannelShouldBlockAndCloseUnblocksIt) {
+  auto ch = MakeChannel<size_t>(3);  // buffered
+  ReceiveFromEmptyChannelShouldBlockAndCloseUnblocksIt(ch);
 }
 
-TEST(Channel, UnBufferedReceiveEmptyChannelTest) {
-  auto ch = MakeChannel<size_t>(0);
+TEST(Channel, ReceiveFromEmptyUnBufferedChannelShouldBlockAndCloseUnblocksIt) {
+  auto ch = MakeChannel<size_t>(0);  // unbuffered
   ReceiveEmptyChannelTest(ch);
 }
 
