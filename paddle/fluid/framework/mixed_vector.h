@@ -32,63 +32,17 @@ class Vector {
  public:
   using value_type = T;
 
-  // Default ctor. Create empty Vector
   Vector() { InitEmpty(); }
+  Vector(size_t count, const T& value);
+  Vector(std::initializer_list<T> init);
+  explicit Vector(const std::vector<T>& dat);
 
-  // Fill vector with value. The vector size is `count`.
-  explicit Vector(size_t count, const T& value = T()) {
-    InitEmpty();
-    if (count != 0) {
-      resize(count);
-      T* ptr = begin();
-      for (size_t i = 0; i < count; ++i) {
-        ptr[i] = value;
-      }
-    }
-  }
+  Vector(const Vector<T>& other) { Copy(other); }
+  Vector(Vector<T>&& other) {   Move(other); }
 
-  // Ctor with init_list
-  Vector(std::initializer_list<T> init) {
-    if (init.size() == 0) {
-      InitEmpty();
-    } else {
-      InitByIter(init.size(), init.begin(), init.end());
-    }
-  }
-
-  // implicit cast from std::vector.
-  template <typename U>
-  Vector(const std::vector<U>& dat) {  // NOLINT
-    if (dat.size() == 0) {
-      InitEmpty();
-    } else {
-      InitByIter(dat.size(), dat.begin(), dat.end());
-    }
-  }
-
-  // Copy ctor
-  Vector(const Vector<T>& other) { this->operator=(other); }
-
-  // Copy operator
   Vector<T>& operator=(const Vector<T>& other) {
-    if (other.size() != 0) {
-      this->InitByIter(other.size(), other.begin(), other.end());
-    } else {
-      InitEmpty();
-    }
+    Copy(other);
     return *this;
-  }
-
-  // Move ctor
-  Vector(Vector<T>&& other) {
-    this->size_ = other.size_;
-    this->flag_ = other.flag_;
-    if (other.cuda_vec_.memory_size()) {
-      this->cuda_vec_.ShareDataWith(other.cuda_vec_);
-    }
-    if (other.cpu_vec_.memory_size()) {
-      this->cpu_vec_.ShareDataWith(other.cpu_vec_);
-    }
   }
 
   // CPU data access method. Mutable.
@@ -205,14 +159,14 @@ class Vector {
   // get cuda ptr. mutable
   T* CUDAMutableData(platform::Place place) {
     const T* ptr = CUDAData(place);
-    flag_ = kDirty | kDataInCUDA;
+    data_status_ = kNeedSync | kOnCUDA;
     return const_cast<T*>(ptr);
   }
 
   // clear
   void clear() {
     size_ = 0;
-    flag_ = kDirty | kDataInCPU;
+    data_status_ = kNeedSync | kOnCPU;
   }
 
   size_t capacity() const {
@@ -267,7 +221,7 @@ class Vector {
  private:
   void InitEmpty() {
     size_ = 0;
-    flag_ = kDataInCPU;
+    data_status_ = kOnCPU;
   }
 
   template <typename Iter>
@@ -278,16 +232,12 @@ class Vector {
     for (size_t i = 0; i < size; ++i) {
       *ptr++ = *begin++;
     }
-    flag_ = kDataInCPU | kDirty;
+    data_status_ = kOnCPU | kNeedSync;
     size_ = size;
   }
 
-  enum DataFlag {
-    kDataInCPU = 0x01,
-    kDataInCUDA = 0x02,
-    // kDirty means the data has been changed in one device.
-    kDirty = 0x10
-  };
+  void Move(Vector<T>&& other);
+  void Copy(const Vector<T>& other);
 
   void CopyToCPU() const {
     // COPY GPU Data To CPU
@@ -299,7 +249,7 @@ class Vector {
     if (IsInCUDA() && IsDirty()) {
       CopyToCPU();
     }
-    flag_ = kDirty | kDataInCPU;
+    data_status_ = kNeedSync | kOnCPU;
   }
 
   void ImmutableCUDA(platform::Place place) const {
@@ -307,8 +257,8 @@ class Vector {
       if (IsInCPU()) {
         Copy(cpu_vec_, boost::get<platform::CUDAPlace>(place), &cuda_vec_);
         WaitPlace(place);
-        UnsetFlag(kDirty);
-        SetFlag(kDataInCUDA);
+        UnsetFlag(kNeedSync);
+        SetFlag(kOnCUDA);
       } else if (IsInCUDA() && !(place == cuda_vec_.place())) {
         framework::Tensor tmp;
         Copy(cuda_vec_, boost::get<platform::CUDAPlace>(place), &tmp);
@@ -324,7 +274,7 @@ class Vector {
         // Even data is not dirty. However, data is not in CUDA. Copy data.
         Copy(cpu_vec_, boost::get<platform::CUDAPlace>(place), &cuda_vec_);
         WaitPlace(place);
-        SetFlag(kDataInCUDA);
+        SetFlag(kOnCUDA);
       } else if (!(place == cuda_vec_.place())) {
         framework::Tensor tmp;
         WaitPlace(cuda_vec_.place());
@@ -343,19 +293,19 @@ class Vector {
     if (IsDirty() &&
         !IsInCPU()) {  // If data has been changed in CUDA, or CPU has no data.
       CopyToCPU();
-      UnsetFlag(kDirty);
+      UnsetFlag(kNeedSync);
     }
-    SetFlag(kDataInCPU);
+    SetFlag(kOnCPU);
   }
 
-  void UnsetFlag(int flag) const { flag_ &= ~flag; }
-  void SetFlag(int flag) const { flag_ |= flag; }
+  void UnsetFlag(int flag) const { data_status_ &= ~flag; }
+  void SetFlag(int flag) const { data_status_ |= flag; }
 
-  bool IsDirty() const { return flag_ & kDirty; }
+  bool IsDirty() const { return data_status_ & kNeedSync; }
 
-  bool IsInCUDA() const { return flag_ & kDataInCUDA; }
+  bool IsInCUDA() const { return data_status_ & kOnCUDA; }
 
-  bool IsInCPU() const { return flag_ & kDataInCPU; }
+  bool IsInCPU() const { return data_status_ & kOnCPU; }
 
   static void WaitPlace(const platform::Place place) {
     if (platform::is_gpu_place(place)) {
@@ -370,11 +320,67 @@ class Vector {
     return dummy;
   }
 
-  mutable int flag_;
-  mutable Tensor cpu_vec_;
-  mutable Tensor cuda_vec_;
+  enum DataStatus {
+    kOnCPU = 0x01,
+    kOnCUDA = 0x02,
+    kNeedSync = 0x10 // data has been changed on the device.
+  } data_status_;
+  Tensor cpu_vec_;
+  Tensor cuda_vec_;
   size_t size_;
 };
+
+
+template <typename T>
+Vector<T>::Vector(size_t count, const T& value) {
+  InitEmpty();
+  if (count != 0) {
+    resize(count);
+    T* ptr = begin();
+    for (size_t i = 0; i < count; ++i) {
+      ptr[i] = value;
+    }
+  }
+}
+
+template <typename T>
+Vector<T>::Vector(std::initializer_list<T> init) {
+  if (init.size() == 0) {
+    InitEmpty();
+  } else {
+    InitByIter(init.size(), init.begin(), init.end());
+  }
+}
+
+template <typename T>
+Vector<T>::Vector(const std::vector<T>& dat) {
+  if (dat.size() == 0) {
+    InitEmpty();
+  } else {
+    InitByIter(dat.size(), dat.begin(), dat.end());
+  }
+}
+
+template <typename T>
+void Vector<T>::Move(Vector<T>&& other) {
+    size_ = other.size_;
+    data_status_ = other.data_status_;
+    if (other.cuda_vec_.memory_size()) {
+      cuda_vec_.ShareDataWith(other.cuda_vec_);
+    }
+    if (other.cpu_vec_.memory_size()) {
+      cpu_vec_.ShareDataWith(other.cpu_vec_);
+    }
+  }
+
+template <typename T>
+void Vector<T>::Copy(const Vector<T>& other) {
+    if (other.size() != 0) {
+      this->InitByIter(other.size(), other.begin(), other.end());
+    } else {
+      InitEmpty();
+    }
+  }
 
 }  // namespace framework
 }  // namespace paddle
