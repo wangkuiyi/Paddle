@@ -25,12 +25,39 @@
 namespace paddle {
 namespace framework {
 
-// Vector<T> implements the std::vector interface, and can get Data or
-// MutableData from any place. The data will be synced implicitly inside.
+// Vector is for replacing thrust::host_vector.  We want this
+// replacement for two reasons:
+//
+// 1. thrust::host_vector has performance issue:
+//    - https://github.com/PaddlePaddle/Paddle/issues/7713
+//    - https://github.com/PaddlePaddle/Paddle/issues/7714
+//
+// 2. thrust::host_vector doesn't use paddle/fluid/memory for memory
+//    management.
+//
+// Vector implements the thrust::host_vector interface
+// (https://thrust.github.io/doc/classthrust_1_1host__vector.html),
+// which is consistent with std::vector
+// (http://en.cppreference.com/w/cpp/container/vector).
+//
+// Feel free to call Vector::Data and Vector::MutableData with any
+// place
+// (https://github.com/PaddlePaddle/Paddle/blob/develop/paddle/fluid/platform/place.h)
+// -- Vector would sync the data.
+//
+// To ease the implementation, Vector uses Tensor as the underlying
+// storage.  Please be aware that our Tensor could contain only
+// POD-typed elements.
+//
 template <typename T>
 class Vector {
  public:
-  using value_type = T;
+  typedef T value_type;
+  typedef T& reference;
+  typedef const T& const_reference;
+  typedef T* iterator;
+  typedef T* const const_iterator;
+  typedef size_t size_type;
 
   Vector() { InitEmpty(); }
   Vector(size_t count, const T& value);
@@ -38,32 +65,22 @@ class Vector {
   explicit Vector(const std::vector<T>& dat);
 
   Vector(const Vector<T>& other) { Copy(other); }
-  Vector(Vector<T>&& other) {   Move(other); }
+  Vector(Vector<T>&& other) { Move(other); }
 
-  Vector<T>& operator=(const Vector<T>& other) {
-    Copy(other);
-    return *this;
+  Vector<T>& operator=(const Vector<T>& other);
+
+  reference operator[](size_t i);
+  const_reference operator[](size_t i) const;
+
+  size_type size() const { return size_; }
+
+  iterator begin() {
+    return capacity() == 0 ? &invalid_reference_placeholder_
+                           : &this->operator[](0);
   }
-
-  // CPU data access method. Mutable.
-  T& operator[](size_t i) {
-    MutableCPU();
-    return const_cast<T*>(cpu_vec_.data<T>())[i];
-  }
-
-  // CPU data access method. Immutable.
-  const T& operator[](size_t i) const {
-    ImmutableCPU();
-    return cpu_vec_.data<T>()[i];
-  }
-
-  // std::vector iterator methods. Based on CPU data access method
-  size_t size() const { return size_; }
-
-  T* begin() { return capacity() == 0 ? &EmptyDummy() : &this->operator[](0); }
-
-  T* end() {
-    return capacity() == 0 ? &EmptyDummy() : &this->operator[](size());
+  iterator end() {
+    return capacity() == 0 ? &invalid_reference_placeholder_
+                           : &this->operator[](size());
   }
 
   T& front() { return *begin(); }
@@ -75,11 +92,13 @@ class Vector {
   }
 
   const T* begin() const {
-    return capacity() == 0 ? &EmptyDummy() : &this->operator[](0);
+    return capacity() == 0 ? &invalid_reference_placeholder_
+                           : &this->operator[](0);
   }
 
   const T* end() const {
-    return capacity() == 0 ? &EmptyDummy() : &this->operator[](size());
+    return capacity() == 0 ? &invalid_reference_placeholder_
+                           : &this->operator[](size());
   }
 
   const T* cbegin() const { return begin(); }
@@ -317,21 +336,17 @@ class Vector {
     }
   }
 
-  static T& EmptyDummy() {
-    static T dummy = T();
-    return dummy;
-  }
-
   enum DataStatus {
     kOnCPU = 0x01,
     kOnCUDA = 0x02,
-    kNeedSync = 0x10 // data has been changed on the device.
+    kNeedSync = 0x10  // data has been changed on the device.
   } data_status_;
   Tensor cpu_vec_;
   Tensor cuda_vec_;
   size_t size_;
-};
 
+  static T invalid_iterator_placeholder_;
+};
 
 template <typename T>
 Vector<T>::Vector(size_t count, const T& value) {
@@ -364,25 +379,96 @@ Vector<T>::Vector(const std::vector<T>& dat) {
 }
 
 template <typename T>
+Vector<T>& Vector<T>::operator=(const Vector<T>& other) {
+  Copy(other);
+  return *this;
+}
+
+template <typename T>
 void Vector<T>::Move(Vector<T>&& other) {
-    size_ = other.size_;
-    data_status_ = other.data_status_;
-    if (other.cuda_vec_.memory_size()) {
-      cuda_vec_.ShareDataWith(other.cuda_vec_);
-    }
-    if (other.cpu_vec_.memory_size()) {
-      cpu_vec_.ShareDataWith(other.cpu_vec_);
-    }
+  size_ = other.size_;
+  data_status_ = other.data_status_;
+  if (other.cuda_vec_.memory_size()) {
+    cuda_vec_.ShareDataWith(other.cuda_vec_);
   }
+  if (other.cpu_vec_.memory_size()) {
+    cpu_vec_.ShareDataWith(other.cpu_vec_);
+  }
+}
 
 template <typename T>
 void Vector<T>::Copy(const Vector<T>& other) {
-    if (other.size() != 0) {
-      this->InitByIter(other.size(), other.begin(), other.end());
-    } else {
-      InitEmpty();
-    }
+  if (other.size() != 0) {
+    this->InitByIter(other.size(), other.begin(), other.end());
+  } else {
+    InitEmpty();
   }
+}
+
+template <typename T>
+Vector<T>::reference Vector<T>::operator[](size_t i) {
+  MutableCPU();
+  return const_cast<T*>(cpu_vec_.data<T>())[i];
+}
+
+template <typename T>
+Vector<T>::const_reference Vector<T>::operator[](size_t i) const {
+  ImmutableCPU();
+  return cpu_vec_.data<T>()[i];
+}
+
+template <typename T>
+Vector<T>::iterator Vector<T>::begin() {
+  return capacity() == 0 ? &invalid_reference_placeholder_
+                         : &this->operator[](0);
+}
+
+template <typename T>
+Vector<T>::iterator Vector<T>::end() {
+  return capacity() == 0 ? &invalid_reference_placeholder_
+                         : &this->operator[](size());
+}
+
+template <typename T>
+const T* Vector<T>::begin() const {
+  return capacity() == 0 ? &invalid_reference_placeholder_
+                         : &this->operator[](0);
+}
+
+template <typename T>
+const T* Vector<T>::end() const {
+  return capacity() == 0 ? &invalid_reference_placeholder_
+                         : &this->operator[](size());
+}
+
+template <typename T>
+const T* Vector<T>::cbegin() const {
+  return begin();
+}
+
+template <typename T>
+const T* Vector<T>::cend() const {
+  return end();
+}
+
+template <typename T>
+T& Vector<T>::front() {
+  return *begin();
+}
+
+template <typename T>
+T& Vector<T>::back() {
+  auto it = end();
+  --it;
+  return *it;
+}
+
+template <typename T>
+const T& Vector<T>::back() const {
+  auto it = end();
+  --it;
+  return *it;
+}
 
 }  // namespace framework
 }  // namespace paddle
