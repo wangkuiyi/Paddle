@@ -68,6 +68,7 @@ __all__ = [
     'layer_norm',
     'softmax_with_cross_entropy',
     'smooth_l1',
+    'one_hot',
 ]
 
 
@@ -1579,7 +1580,7 @@ def layer_norm(input,
     """
     **Layer Normalization**
 
-    Assume feature vectors exist on dimensions 
+    Assume feature vectors exist on dimensions
     :attr:`begin_norm_axis ... rank(input)` and calculate the moment statistics
     along these dimensions for each feature vector :math:`a` with size
     :math:`H`, then normalize each feature vector using the corresponding
@@ -1600,13 +1601,13 @@ def layer_norm(input,
 
     Args:
         input(Variable): The input tensor variable.
-        scale(bool): Whether to learn the adaptive gain :math:`g` after 
+        scale(bool): Whether to learn the adaptive gain :math:`g` after
             normalization.
-        shift(bool): Whether to learn the adaptive bias :math:`b` after 
+        shift(bool): Whether to learn the adaptive bias :math:`b` after
             normalization.
-        begin_norm_axis(bool): The normalization will be performed along 
+        begin_norm_axis(bool): The normalization will be performed along
             dimensions from :attr:`begin_norm_axis` to :attr:`rank(input)`.
-        epsilon(float): The small value added to the variance to prevent 
+        epsilon(float): The small value added to the variance to prevent
             division by zero.
         param_attr(ParamAttr|None): The parameter attribute for the learnable
             gain :math:`g`.
@@ -2070,7 +2071,7 @@ def reduce_sum(input, dim=None, keep_dim=False, name=None):
             Tensor variable with a single element, otherwise must be in the
             range :math:`[-rank(input), rank(input))`. If :math:`dim < 0`,
             the dimension to reduce is :math:`rank + dim`.
-        keep_dim (bool): Whether to reserve the reduced dimension in the
+        keep_dim (bool|False): Whether to reserve the reduced dimension in the
             output Tensor. The result tensor will have one fewer dimension
             than the :attr:`input` unless :attr:`keep_dim` is true.
         name(str|None): A name for this layer(optional). If set None, the layer
@@ -3098,33 +3099,33 @@ def multiplex(inputs, index):
 def softmax_with_cross_entropy(logits, label, soft_label=False):
     """
     **Softmax With Cross Entropy Operator.**
-    
+
     Cross entropy loss with softmax is used as the output layer extensively. This
     operator computes the softmax normalized values for each row of the input
     tensor, after which cross-entropy loss is computed. This provides a more
     numerically stable gradient.
-    
+
     Because this operator performs a softmax on logits internally, it expects
     unscaled logits. This operator should not be used with the output of
     softmax operator since that would produce incorrect results.
-    
+
     When the attribute soft_label is set false, this operators expects mutually
     exclusive hard labels, each sample in a batch is in exactly one class with a
     probability of 1.0. Each sample in the batch will have a single label.
-    
+
     The equation is as follows:
-    
+
     1) Hard label (one-hot label, so every sample has exactly one class)
-    
+
     .. math::
 
         loss_j =  -\\text{logit}_{label_j} +
         \\log\\left(\\sum_{i=0}^{K}\\exp(\\text{logit}_i)\\right), j = 1,..., K
-    
+
     2) Soft label (each sample can have a distribution over all classes)
 
     .. math::
-    
+
         loss_j =  -\\sum_{i=0}^{K}\\text{label}_i
         \\left(\\text{logit}_i - \\log\\left(\\sum_{i=0}^{K}
         \\exp(\\text{logit}_i)\\right)\\right), j = 1,...,K
@@ -3169,7 +3170,7 @@ def smooth_l1(x, y, inside_weight=None, outside_weight=None, sigma=None):
     The operator takes the first dimension of X and Y as batch size.
     For each instance, it computes the smooth l1 loss element by element first
     and then sums all the losses. So the shape of Out is [batch_size, 1].
-    
+
     Args:
         x (Variable): A tensor with rank at least 2. The input value of smooth
             l1 loss op with shape [batch_size, dim1, ..., dimN].
@@ -3212,3 +3213,40 @@ def smooth_l1(x, y, inside_weight=None, outside_weight=None, sigma=None):
                  'Out': loss},
         attrs={'sigma': sigma})
     return loss
+
+
+def one_hot(input, depth):
+    """
+    One Hot Operator. This operator creates the one-hot representations for input
+    index values. The following example will help to explain the function of this
+    operator.
+
+    Args:
+        input(Tensor/LodTensor):  A Tensor/LodTensor of indices, last dimension must be 1.
+        depth(scalar): an interger defining the depth of the one hot dimension.
+
+    Returns:
+         The one-hot tensor or LodTensor, same as input.
+
+    Examples:
+        X is a LoDTensor:
+          X.lod = [[0, 1, 4]]
+          X.shape = [4, 1]
+          X.data = [[1], [1], [3], [0]]
+        set depth = 4
+        Out is a LoDTensor:
+          Out.lod = [[0, 1, 4]]
+          Out.shape = [4, 4]
+          Out.data = [[0., 1., 0., 0.],
+                      [0., 1., 0., 0.],
+                      [0., 0., 0., 1.],
+                      [1., 0., 0., 0.]]
+    """
+    helper = LayerHelper("one_hot", **locals())
+    one_hot_out = helper.create_tmp_variable(dtype='float32')
+    helper.append_op(
+        type="one_hot",
+        inputs={'X': input},
+        attrs={'depth': depth},
+        outputs={'Out': one_hot_out})
+    return one_hot_out
